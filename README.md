@@ -56,3 +56,13 @@ A Streamlit-based chatbot that lets you ask questions about any YouTube video us
 - Videos must have English captions/transcripts enabled
 - First load may take longer as the embedding model downloads
 - Chat history is maintained per video session
+
+## 🌐 Deployment
+
+Ready to share your chatbot? Deploy it on Hugging Face Spaces for free!
+
+See [DEPLOYMENT.md](DEPLOYMENT.md) for complete instructions on deploying to:
+- Hugging Face Spaces (easiest)
+- GitHub integration (recommended)
+- Other Streamlit hosting options
+
