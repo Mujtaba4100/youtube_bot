@@ -29,6 +29,10 @@ if 'transcript' not in st.session_state:
     st.session_state.transcript = None
 if 'video_id' not in st.session_state:
     st.session_state.video_id = None
+if 'summary' not in st.session_state:
+    st.session_state.summary = None
+if 'summary_loading' not in st.session_state:
+    st.session_state.summary_loading = False
 
 def extract_video_id(url):
     """Extract video ID from YouTube URL"""
@@ -110,6 +114,40 @@ def get_answer(vector_store, question):
 
     return answer.content, retrieved_docs
 
+def generate_summary(transcript):
+    """Generate a summary of the video transcript"""
+    prompt = PromptTemplate(
+        template="""
+        You are an expert at summarizing video transcripts.
+        Please provide a comprehensive summary of the following transcript.
+
+        Format your response as:
+
+        📌 **Key Points:**
+        - Point 1
+        - Point 2
+        - Point 3
+        (etc.)
+
+        📝 **Summary:**
+        [Write a 2-3 paragraph summary here]
+
+        🎯 **Main Takeaway:**
+        [One sentence main takeaway]
+
+        Transcript:
+        {transcript}
+        """,
+        input_variables=['transcript']
+    )
+
+    final_prompt = prompt.invoke({"transcript": transcript})
+
+    llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0.3)
+    summary = llm.invoke(final_prompt.text)
+
+    return summary.content
+
 # Sidebar
 with st.sidebar:
     st.header("Video Settings")
@@ -158,6 +196,7 @@ with st.sidebar:
             st.session_state.chat_history = []
             st.session_state.transcript = None
             st.session_state.video_id = None
+            st.session_state.summary = None
             st.rerun()
 
 # Main content area
@@ -181,47 +220,89 @@ if st.session_state.vector_store is None:
         del st.session_state.example_url
 
 else:
-    # Chat interface
-    st.subheader("💬 Ask Questions")
+    # Create tabs for different sections
+    chat_tab, summary_tab = st.tabs(["💬 Chat", "📋 Summary"])
 
-    # Display chat history
-    for message in st.session_state.chat_history:
-        with st.chat_message(message["role"]):
-            st.write(message["content"])
-            if "sources" in message:
-                with st.expander("📄 View Sources"):
-                    for i, doc in enumerate(message["sources"], 1):
-                        st.text(f"Source {i}:\n{doc.page_content[:200]}...")
+    with chat_tab:
+        st.subheader("Ask Questions")
 
-    # Chat input
-    question = st.chat_input("Ask a question about the video...")
+        # Display chat history
+        for message in st.session_state.chat_history:
+            with st.chat_message(message["role"]):
+                st.write(message["content"])
+                if "sources" in message:
+                    with st.expander("📄 View Sources"):
+                        for i, doc in enumerate(message["sources"], 1):
+                            st.text(f"Source {i}:\n{doc.page_content[:200]}...")
 
-    if question:
-        # Add user message
-        st.session_state.chat_history.append({
-            "role": "user",
-            "content": question
-        })
+        # Chat input
+        question = st.chat_input("Ask a question about the video...")
 
-        with st.chat_message("user"):
-            st.write(question)
+        if question:
+            # Add user message
+            st.session_state.chat_history.append({
+                "role": "user",
+                "content": question
+            })
 
-        # Get answer
-        with st.chat_message("assistant"):
-            with st.spinner("Thinking..."):
-                answer, sources = get_answer(st.session_state.vector_store, question)
-                st.write(answer)
+            with st.chat_message("user"):
+                st.write(question)
 
-                with st.expander("📄 View Sources"):
-                    for i, doc in enumerate(sources, 1):
-                        st.text(f"Source {i}:\n{doc.page_content[:200]}...")
+            # Get answer
+            with st.chat_message("assistant"):
+                with st.spinner("Thinking..."):
+                    answer, sources = get_answer(st.session_state.vector_store, question)
+                    st.write(answer)
 
-        # Add assistant message
-        st.session_state.chat_history.append({
-            "role": "assistant",
-            "content": answer,
-            "sources": sources
-        })
+                    with st.expander("📄 View Sources"):
+                        for i, doc in enumerate(sources, 1):
+                            st.text(f"Source {i}:\n{doc.page_content[:200]}...")
+
+            # Add assistant message
+            st.session_state.chat_history.append({
+                "role": "assistant",
+                "content": answer,
+                "sources": sources
+            })
+
+    with summary_tab:
+        st.subheader("Video Summary")
+
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            st.markdown("Get an AI-generated summary of the video content")
+        with col2:
+            if st.button("🔄 Generate Summary", use_container_width=True):
+                st.session_state.summary_loading = True
+                st.rerun()
+
+        st.divider()
+
+        if st.session_state.summary_loading:
+            with st.spinner("✨ Generating summary... This may take a moment"):
+                try:
+                    summary = generate_summary(st.session_state.transcript)
+                    st.session_state.summary = summary
+                    st.session_state.summary_loading = False
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Error generating summary: {str(e)}")
+                    st.session_state.summary_loading = False
+
+        if st.session_state.summary:
+            st.markdown(st.session_state.summary)
+
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("📝 Regenerate Summary", use_container_width=True):
+                    st.session_state.summary_loading = True
+                    st.rerun()
+            with col2:
+                if st.button("🗑️ Clear Summary", use_container_width=True):
+                    st.session_state.summary = None
+                    st.rerun()
+        else:
+            st.info("👆 Click 'Generate Summary' to create an AI summary of this video")
 
 # Footer
 st.divider()
